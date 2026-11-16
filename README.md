@@ -40,7 +40,35 @@ sign-off, operational control, or safety-critical use.
   settings; includes a clear warning for hydraulically infeasible settings.
 - Exports scenario assumptions (**JSON**), strategy comparison (**CSV**),
   and a 900-row sensitivity grid (**CSV**).
-- Includes 23 analytical/regression tests and a GitHub Actions workflow.
+- Includes 43 automated tests for engineering, input validation, and reporting.
+
+## Engineering enhancements (version remains 1.1.0)
+
+ReliFlow includes these additional **illustrative analysis tools** while retaining the
+same version number, the Calculate & Optimize workflow, and the single-pump
+reference case:
+
+- **Suction and NPSH screening:** estimate NPSH available from absolute
+  suction-surface pressure, vapor pressure, elevation, and friction losses.
+  Compare it with an assumed speed-scaled NPSH required and optionally limit
+  the optimizer's allowable pump speed. A passing screen does **not** validate
+  cavitation safety; use manufacturer NPSHr curves and real site data.
+- **Simplified pump efficiency map:** examine the existing BEP-centred
+  efficiency approximation as a heatmap over flow and speed. This is not a
+  measured performance or certified manufacturer efficiency curve.
+- **Parallel-pump energy comparison:** compare one, two, and three
+  identical *active* pumps delivering the same combined flow. Equal flow
+  sharing and a common system head are assumed. This diagnostic is
+  **not** a redundant/standby availability model.
+- **Weibull parameter sensitivity:** evaluate nine deterministic combinations
+  of shape and characteristic-life perturbations for the *fixed* recommended
+  strategy. Results are scenarios, not statistically estimated intervals.
+- **PDF engineering summary:** download a concise report documenting the
+  model-selected single-pump strategy, baseline comparison, and suction screen.
+
+These additions are engineering-learning aids, not equipment-selection or
+plant-operating guidance. The optimizer still uses a finite speed/maintenance
+search, and reliability remains independent of pump operating speed.
 
 ## Update in v1.1.0 (16 November 2026)
 

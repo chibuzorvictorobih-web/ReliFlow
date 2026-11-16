@@ -1,5 +1,23 @@
 # ReliFlow: Reproducible Engineering Case Study
 
+## Additional educational diagnostics
+
+This enhanced build retains the same **v1.1.0** version label and preserves the
+original pump-cost case study. The optional NPSH screen uses assumed pressure,
+vapor pressure, liquid elevation, suction losses and NPSHr with a squared-speed
+approximation; it should not be interpreted as a vendor-verified cavitation limit.
+The heatmap visualizes the original synthetic pump efficiency relation.
+
+A parallel-pump comparison approximates the electrical input for one to three
+identical active pumps at the same total system flow and head; it does not
+simulate standby systems or availability. A nine-scenario Weibull sensitivity
+table varies the assumed lifetime distribution while holding the recommended
+speed and maintenance strategy fixed. These are deterministic scenarios, not
+confidence intervals.
+
+An exportable PDF contains the engineering results, assumptions and limitations.
+All source values remain educational examples rather than measured plant data.
+
 ## Problem statement
 
 An illustrative centrifugal pump supplies a cooling-water circuit. The

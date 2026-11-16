@@ -19,8 +19,12 @@ from reliflow.optimization import EconomicsSpec, evaluate_strategy, optimize_str
 from reliflow.presets import PRESETS
 from reliflow.pump import (
     PumpSpec, SystemSpec, controlled_duty, free_flow_point,
-    minimum_feasible_speed, pump_head_m, system_head_m,
+    minimum_feasible_speed, pump_head_m, system_head_m, pump_efficiency,
 )
+from reliflow.suction import SuctionSpec, screen_npsh, npsh_max_speed_ratio
+from reliflow.robustness import reliability_sensitivity
+from reliflow.parallel import best_parallel_energy
+from reliflow.report import make_report_pdf
 from reliflow.reliability import (
     WeibullSpec, MaintenanceSpec, age_replacement, conditional_survival,
     hazard_per_hour, mean_lifetime_hours, survival,
@@ -164,6 +168,32 @@ with st.sidebar:
             energy_price = number("Electricity price ($/kWh)", seed, "electricity_price_per_kwh", step=0.01)
             grid_factor = number("Emission factor (kg CO₂/kWh)", seed, "grid_emissions_kgco2_per_kwh", step=0.01)
 
+        with st.expander("5 · Suction screening & uncertainty (optional)"):
+            enable_npsh = st.checkbox(
+                "Apply illustrative NPSH margin to speed optimization", value=True,
+                key=f"{preset_name}:enable_npsh"
+            )
+            suction_defaults = {
+                "surface_p_abs": 101.325, "vapor_p_abs": 2.3,
+                "liquid_elevation": 0.0, "suction_friction": 1.5,
+                "npshr_at_reference": 3.0, "npsh_margin": 1.3,
+                "beta_unc_pct": 15.0, "life_unc_pct": 20.0,
+            }
+            surface_p_abs = number("Suction surface absolute pressure (kPa)", suction_defaults, "surface_p_abs", min_value=1.0)
+            vapor_p_abs = number("Vapor pressure (absolute kPa)", suction_defaults, "vapor_p_abs", min_value=0.0)
+            liquid_elevation = number("Liquid surface above impeller centre (m; can be negative)",
+                                      suction_defaults, "liquid_elevation", min_value=-100.0)
+            suction_friction = number("Suction line friction head loss (m)", suction_defaults, "suction_friction")
+            npshr_at_reference = number("Assumed NPSHr at 100% reference speed (m)",
+                                        suction_defaults, "npshr_at_reference", min_value=0.01)
+            npsh_margin = number("Requested NPSHa / NPSHr ratio (at least 1)",
+                                 suction_defaults, "npsh_margin", min_value=1.0, max_value=5.0, step=0.05)
+            st.caption("NPSHr is assumed and scaled with speed squared; this is NOT a vendor NPSHr(Q) curve or a cavitation design check.")
+            beta_unc_pct = number("Weibull shape variation (±%)", suction_defaults, "beta_unc_pct",
+                                   min_value=0.0, max_value=90.0, fmt="%.0f")
+            life_unc_pct = number("Weibull life variation (±%)", suction_defaults, "life_unc_pct",
+                                   min_value=0.0, max_value=90.0, fmt="%.0f")
+
         st.caption("Costs use example $ units. You may interpret them in another consistent currency by changing values.")
 
 
@@ -183,10 +213,17 @@ if submitted:
             lifetime = WeibullSpec(beta, eta)
             maintenance = MaintenanceSpec(d_pm, d_cm, c_pm, c_cm, c_out)
             economics = EconomicsSpec(annual_hours, energy_price, grid_factor)
+            suction = SuctionSpec(surface_p_abs, vapor_p_abs, liquid_elevation, suction_friction,
+                                  npshr_at_reference, npsh_margin)
+            screening_limit = npsh_max_speed_ratio(suction, pump) if enable_npsh else None
+            effective_max_speed = min(max_speed, screening_limit) if enable_npsh else max_speed
             if min_speed > max_speed or low_pm > high_pm:
                 raise ValueError("Optimization search bounds must increase from minimum to maximum.")
+            if effective_max_speed < min_speed:
+                raise ValueError("No feasible pump speed meets the selected NPSH screening ratio. "
+                                 "Lower the speed floor or revise suction assumptions using valid design data.")
             optimized = optimize_strategy(pump, system, flow, lifetime, maintenance, economics,
-                                          min_speed, max_speed, low_pm, high_pm)
+                                          min_speed, effective_max_speed, low_pm, high_pm)
             baseline = None
             try:
                 baseline = evaluate_strategy(pump, system, flow, lifetime, maintenance, economics,
@@ -203,9 +240,14 @@ if submitted:
                 "preset": preset_name,
                 "model": (pump, system, lifetime, maintenance, economics),
                 "strategies": (optimized, baseline, chosen),
+                "suction": suction,
+                "enable_npsh": enable_npsh,
+                "screening_limit": screening_limit,
                 "inputs": {
                     "flow": flow, "selected_speed": selected_speed,
-                    "min_speed": min_speed, "max_speed": max_speed,
+                    "min_speed": min_speed, "max_speed": effective_max_speed,
+                    "requested_max_speed": max_speed,
+                    "beta_unc_pct": beta_unc_pct, "life_unc_pct": life_unc_pct,
                     "low_pm": low_pm, "high_pm": high_pm,
                     "age": age, "horizon": horizon, "eta": eta,
                     "grid_factor": grid_factor, "baseline_pm": baseline_pm,
@@ -231,16 +273,28 @@ if analysis is None or analysis["preset"] != preset_name:
 
 pump, system, lifetime, maintenance, economics = analysis["model"]
 optimized, baseline, chosen = analysis["strategies"]
+suction = analysis["suction"]
+enable_npsh = analysis["enable_npsh"]
+npsh_optimized = screen_npsh(suction, pump, optimized.duty.speed_ratio)
+screening_limit = analysis["screening_limit"]
 active = analysis["inputs"]
 flow, selected_speed = active["flow"], active["selected_speed"]
 min_speed, max_speed = active["min_speed"], active["max_speed"]
 low_pm, high_pm = active["low_pm"], active["high_pm"]
 age, horizon, eta = active["age"], active["horizon"], active["eta"]
 grid_factor, baseline_pm = active["grid_factor"], active["baseline_pm"]
+beta_unc_pct, life_unc_pct = active["beta_unc_pct"], active["life_unc_pct"]
 st.caption("Showing the **last calculated** results. Changes in the sidebar take effect only after you press Calculate & Optimize again.")
 st.info("The model satisfies the SAME required flow in all feasible control scenarios by assuming a throttling valve absorbs excess head. "
         "Speed changes do not automatically alter failure rates in this model.", icon="ℹ️")
 
+if enable_npsh and screening_limit is not None and screening_limit < active["requested_max_speed"]:
+    st.warning(f"NPSH screening restricts optimization speed to {screening_limit:.1%} "
+               f"(previous maximum: {active['requested_max_speed']:.1%}). "
+               "This is an illustrative screening constraint, not a vendor-verified operating limit.")
+if enable_npsh and baseline is not None and not screen_npsh(suction, pump, 1.0).passes_requested_margin:
+    st.warning("Reference-speed baseline does not satisfy the illustrative NPSH margin. "
+               "Cost comparisons to it do not establish an operationally acceptable baseline.")
 if chosen is None:
     st.warning(f"The selected display speed of {selected_speed:.0%} cannot supply the requested flow. "
                f"The minimum feasible speed is {minimum_feasible_speed(pump, system, flow):.1%}. "
@@ -327,7 +381,7 @@ with overview:
 
 with hydraulics:
     st.subheader("Centrifugal-pump curves and controlled duty")
-    max_plot_flow = max(flow * 1.6, bep_flow * max(1.3, max_speed * 1.4))
+    max_plot_flow = max(flow * 1.6, pump.bep_flow_m3h * max(1.3, max_speed * 1.4))
     q = np.linspace(0, max_plot_flow, 300)
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=q, y=[system_head_m(system, float(z)) for z in q],
@@ -377,6 +431,61 @@ with hydraulics:
     st.plotly_chart(plot_style(energy_fig, "Same-flow electricity intensity", "Reference speed (%)", "kWh/m³"),
                     use_container_width=True)
 
+    st.markdown("#### Illustrative pump efficiency map")
+    st.caption("BEP-centered quadratic approximation showing pump efficiency across flow and speed. "
+               "It is not calibrated to a manufacturer's test curve.")
+    q_axis = np.linspace(max(1.0, 0.25 * pump.bep_flow_m3h), 1.8 * pump.bep_flow_m3h, 55)
+    s_axis = np.linspace(max(0.35, min_speed), max(0.55, max_speed), 45)
+    efficiencies = np.array([[100 * pump_efficiency(pump, float(qv), float(sv))
+                              for qv in q_axis] for sv in s_axis])
+    efficiency_fig = go.Figure(data=go.Heatmap(
+        x=q_axis, y=100 * s_axis, z=efficiencies,
+        colorscale="Viridis", colorbar=dict(title="Efficiency (%)"),
+        hovertemplate="Flow: %{x:.1f} m³/h<br>Speed: %{y:.1f}%<br>Efficiency: %{z:.1f}%<extra></extra>",
+    ))
+    efficiency_fig.add_trace(go.Scatter(
+        x=[flow], y=[100 * optimized.duty.speed_ratio], mode="markers",
+        name="Optimized single-pump duty", marker=dict(color="#F3AD36", size=12, symbol="diamond",
+                                                   line=dict(color="#0F1724", width=1)),
+    ))
+    st.plotly_chart(plot_style(efficiency_fig, "Simplified efficiency surface", "Pump flow (m³/h)", "Speed (% reference)"),
+                    use_container_width=True)
+
+    st.markdown("#### Suction-side NPSH screening")
+    ncol1, ncol2, ncol3 = st.columns(3)
+    ncol1.metric("NPSH available (assumed)", f"{npsh_optimized.available_m:.2f} m")
+    ncol2.metric("NPSH required (approx.)", f"{npsh_optimized.required_m:.2f} m")
+    ncol3.metric("NPSHa / NPSHr", f"{npsh_optimized.margin_ratio:.2f} ×")
+    if npsh_optimized.passes_requested_margin:
+        st.success("The optimized speed meets the selected illustrative NPSH margin ratio.")
+    else:
+        st.warning("The optimized speed does not meet the selected illustrative NPSH margin. "
+                   "The screen is informational if enforcement was disabled.")
+    st.caption("NPSHa is computed from absolute suction pressure, vapor pressure, static liquid elevation and suction losses. "
+               "Reference NPSHr is user-assumed and scaled as speed²: verify with vendor curves and actual piping data. "
+               "Passing this screen does not mean cavitation or damage is impossible.")
+
+    st.markdown("#### Active parallel pumps (energy diagnostic only)")
+    st.caption("Compare identical active pumps sharing the SAME total flow and system head. "
+               "This is not a standby/redundancy or multi-pump reliability model, and does not enter the cost optimizer.")
+    parallel_rows = []
+    for count in (1, 2, 3):
+        try:
+            alt = best_parallel_energy(pump, system, flow, count, min_speed, max_speed)
+            parallel_rows.append({
+                "Active pumps": count,
+                "Speed (% reference)": round(100 * alt.speed_ratio, 2),
+                "Flow per pump (m³/h)": round(alt.per_pump_duty.flow_m3h, 2),
+                "Total electric input (kW)": round(alt.combined_electric_kw, 2),
+                "kWh/m³": round(alt.specific_energy_kwh_m3, 4),
+            })
+        except ValueError:
+            pass
+    if parallel_rows:
+        st.dataframe(pd.DataFrame(parallel_rows), hide_index=True, use_container_width=True)
+    else:
+        st.warning("No parallel configuration meets the chosen hydraulic speed range.")
+
 with reliability:
     st.subheader("Weibull survival and maintenance renewal model")
     p_future = conditional_survival(lifetime, age, horizon)
@@ -414,6 +523,19 @@ with reliability:
                                "Planned interval (operating h)", "Availability (%)"), use_container_width=True)
     st.caption("The age-replacement policy assumes as-new restoration, fixed repair durations and independent failure cycles. "
                "Weibull parameters must be estimated from actual lifetime records for operational use.")
+
+    st.markdown("#### Sensitivity to uncertain Weibull parameters")
+    scenario_rows = reliability_sensitivity(
+        pump, system, flow, lifetime, maintenance, economics, optimized,
+        beta_unc_pct / 100.0, life_unc_pct / 100.0, baseline=baseline,
+    )
+    scenario_costs = [r["Annual cost ($)"] for r in scenario_rows]
+    sc1, sc2 = st.columns(2)
+    sc1.metric("Lowest simulated annual cost", money(min(scenario_costs)))
+    sc2.metric("Highest simulated annual cost", money(max(scenario_costs)))
+    st.dataframe(pd.DataFrame(scenario_rows), hide_index=True, use_container_width=True)
+    st.caption("Nine deterministic parameter combinations. Optimized speed and maintenance interval are held fixed "
+               "and NOT reoptimized for each case. These ranges are sensitivity scenarios, not confidence or prediction intervals.")
 
 with decision:
     st.subheader("Compare strategies and export reproducible results")
@@ -479,6 +601,10 @@ with decision:
         "baseline_pm_interval_operating_hours": baseline_pm,
         "speed_search_bounds_ratio": [min_speed, max_speed],
         "pm_search_bounds_operating_hours": [low_pm, high_pm],
+        "suction_assumptions": asdict(suction), "npsh_screen_enforced": enable_npsh,
+        "npsh_screening_speed_ceiling": screening_limit,
+        "npsh_at_optimized": asdict(npsh_optimized),
+        "uncertainty_band_fraction": {"shape": beta_unc_pct / 100, "characteristic_life": life_unc_pct / 100},
         "optimized": {"speed_ratio": optimized.duty.speed_ratio,
                       "pm_interval_operating_hours": optimized.maintenance.interval_hours,
                       "annual_total_cost": optimized.annual_total_cost,
@@ -497,6 +623,11 @@ with decision:
                                     economics, min_speed, max_speed, low_pm, high_pm)
             st.download_button("Download 900 scenarios (CSV)", sens.to_csv(index=False).encode("utf-8"),
                                file_name="reliflow_sensitivity.csv", mime="text/csv")
+    st.markdown("#### Download engineering summary")
+    pdf_bytes = make_report_pdf(preset_name, __version__, flow, optimized, baseline, suction, npsh_optimized)
+    st.download_button("📄 Download engineering summary (PDF)", pdf_bytes,
+                       file_name="reliflow_engineering_summary.pdf", mime="application/pdf",
+                       use_container_width=True)
 
 with methods:
     st.subheader("Model equations, verification and boundaries")
@@ -508,6 +639,16 @@ with methods:
                 "any surplus pump head across an idealized throttling valve. Open-valve flow is "
                 "shown separately as a diagnostic. The assumed efficiency shape is a BEP-centred "
                 "quadratic, not a manufacturer's test curve.")
+    st.markdown("**Suction screening (illustrative)**")
+    st.latex(r"NPSH_a=\frac{p_{abs}-p_{vap}}{\rho g}+z_{surface}-z_{impeller}-h_{f,suction}")
+    st.latex(r"NPSH_{r,approx}(s)=NPSH_{r,ref}s^2,\qquad NPSH_a/NPSH_r\geq M_{user}")
+    st.markdown("Screening is enabled by default and caps maximum speed when the assumed NPSH margin "
+                "would be violated. It is not a replacement for vendor NPSHr(Q,s) curves, "
+                "transient suction pressure checks, or mechanical-seal and cavitation assessment.")
+    st.markdown("**Parallel active pumps (diagnostic only)**")
+    st.latex(r"Q_{each}=Q_{total}/n,\qquad P_{total}=nP_{each},\qquad H_{each}=H_{sys}(Q_{total})")
+    st.markdown("This is an energy-only illustration for equally loaded active pumps with identical curves. "
+                "It is not a reliability, redundancy, or economic optimum model.")
     st.markdown("**Failure and renewal rewards**")
     st.latex(r"R(t)=e^{-(t/\eta)^\beta},\qquad R(a+t\mid X>a)=e^{-((a+t)/\eta)^\beta+(a/\eta)^\beta}")
     st.latex(r"E[U(T)]=\int_0^T R(t)\,dt,\quad E[D(T)]=R(T)d_{PM}+[1-R(T)]d_{CM}")
@@ -519,10 +660,10 @@ with methods:
                 "and the stated value of downtime. All replacement/repair cycles restore as new.")
     st.markdown("**Technical limitations**")
     st.markdown("""
-- Illustrative static head and constant quadratic resistance; **no transient hydraulics, surge, cavitation, NPSH, minimum-flow, viscosity, piping constraints or motor load limits**.
+- Illustrative static head and constant quadratic resistance; **no transient hydraulics, surge, validated NPSH curves, cavitation physics, minimum-flow, viscosity, suction piping surveys, or motor load limits**. Only a simplified suction margin screening is provided.
 - Speed scaling uses simplified affinity laws and a synthetic BEP efficiency map; verify all conditions against **manufacturer pump curves and motor/VSD ratings**.
 - The outage probability model is a **Weibull assumption**, not an inference from the pump curves. No causal speed–failure or maintenance–energy effect is assumed.
-- Age replacement implies perfect renewal; it excludes imperfect maintenance, common-cause failures, standby equipment, inspection policy and uncertainty in fitted parameters.
+- Age replacement implies perfect renewal; it excludes imperfect maintenance, common-cause failures, standby equipment and inspection policy. Deterministic ± sensitivity scenarios show parameter uncertainty impacts but are not confidence intervals.
 - Constant demand and time-average availability are used. Annual results are expected values, **not measurements, guarantees or a full lifecycle financial assessment**.
 - Currency is arbitrary consistent dollars; electricity CO₂ factor is an editable assumption, not a country-specific verified emissions inventory.
 - The optimizer is a **finite grid search** over bounded speed and PM intervals, with run to failure. Boundary optima should be checked with wider ranges.
@@ -534,7 +675,8 @@ with methods:
 - [U.S. Department of Energy — Improving Pumping System Performance](https://www.energy.gov/sites/prod/files/2014/05/f16/pump.pdf)
 - [NIST/SEMATECH Engineering Statistics Handbook — Weibull](https://www.itl.nist.gov/div898/handbook/apr/section1/apr162.htm)
 """)
-    st.caption("Use the repository tests for analytical and edge-case checks before relying on model changes.")
+    st.caption("An engineering summary PDF can be downloaded from Optimization & exports. "
+               "Use the repository tests for analytical and edge-case checks before relying on model changes.")
 
 st.divider()
 st.caption("ReliFlow is an independent computational engineering portfolio project. "
