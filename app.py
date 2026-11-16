@@ -42,11 +42,24 @@ st.markdown("""
     border-radius: 0.75rem;
     box-shadow: none;
 }
+/* Show complete metric labels and values instead of ellipses. */
 [data-testid="stMetricLabel"], [data-testid="stMetricDelta"] {
     color: #B9C8D9 !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
 }
 [data-testid="stMetricValue"] {
     color: #F8FAFC !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    line-height: 1.2 !important;
+}
+[data-testid="stMetricValue"] *, [data-testid="stMetricLabel"] * {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
 }
 .small-note {color:#B9C8D9; font-size:0.92rem;}
 </style>
@@ -76,6 +89,11 @@ def money(x: float) -> str:
 
 def format_interval(interval: float | None) -> str:
     return "Run to failure" if interval is None else f"{interval:,.0f} operating h"
+
+
+def format_interval_metric(interval: float | None) -> str:
+    """Short display for metric cards; full interval remains elsewhere."""
+    return "Run-to-failure" if interval is None else f"{interval:,.0f} h"
 
 
 def plot_style(fig: go.Figure, title: str, x_label: str, y_label: str) -> go.Figure:
@@ -303,10 +321,10 @@ if baseline is None:
     st.warning("The nominal 100% speed reference cannot supply the specified required flow, so baseline savings are not reported.")
 
 m1, m2, m3, m4 = st.columns(4)
-m1.metric("Optimized speed", f"{optimized.duty.speed_ratio:.1%} reference")
-m2.metric("Recommended maintenance", format_interval(optimized.maintenance.interval_hours))
+m1.metric("Optimized speed (% ref)", f"{optimized.duty.speed_ratio:.1%}")
+m2.metric("Recommended PM interval", format_interval_metric(optimized.maintenance.interval_hours))
 m3.metric("Expected availability", f"{optimized.maintenance.availability:.2%}")
-m4.metric("Estimated annual total cost", money(optimized.annual_total_cost))
+m4.metric("Annual total cost", money(optimized.annual_total_cost))
 
 
 overview, hydraulics, reliability, decision, methods = st.tabs([
@@ -357,8 +375,8 @@ with overview:
                 baseline.duty.specific_energy_kwh_m3 - optimized.duty.specific_energy_kwh_m3
             ) / baseline.duty.specific_energy_kwh_m3
             total_saved = baseline.annual_total_cost - optimized.annual_total_cost
-            st.metric("Electricity per m³ reduction vs 100% speed", f"{specific_saved:.1f}%")
-            st.metric("Annual modeled cost difference vs baseline", money(total_saved))
+            st.metric("Energy intensity reduction", f"{specific_saved:.1f}%")
+            st.metric("Annual cost difference", money(total_saved))
             st.caption("Same delivered flow rate; baseline and optimized availability can differ. "
                        "Annual total cost includes the assumed monetary value of outages.")
 
@@ -453,7 +471,7 @@ with hydraulics:
 
     st.markdown("#### Suction-side NPSH screening")
     ncol1, ncol2, ncol3 = st.columns(3)
-    ncol1.metric("NPSH available (assumed)", f"{npsh_optimized.available_m:.2f} m")
+    ncol1.metric("NPSH available", f"{npsh_optimized.available_m:.2f} m")
     ncol2.metric("NPSH required (approx.)", f"{npsh_optimized.required_m:.2f} m")
     ncol3.metric("NPSHa / NPSHr", f"{npsh_optimized.margin_ratio:.2f} ×")
     if npsh_optimized.passes_requested_margin:
@@ -490,10 +508,10 @@ with reliability:
     st.subheader("Weibull survival and maintenance renewal model")
     p_future = conditional_survival(lifetime, age, horizon)
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Mean fresh-component life (MTTF)", f"{mean_lifetime_hours(lifetime):,.0f} h")
+    m1.metric("Mean life (MTTF)", f"{mean_lifetime_hours(lifetime):,.0f} h")
     m2.metric("Survival to current age", f"{survival(lifetime, age):.1%}")
-    m3.metric(f"Next {horizon:,.0f} h survival | age {age:,.0f}", f"{p_future:.1%}")
-    m4.metric("Optimized expected availability", f"{optimized.maintenance.availability:.2%}")
+    m3.metric("Future survival probability", f"{p_future:.1%}")
+    m4.metric("Optimized availability", f"{optimized.maintenance.availability:.2%}")
     st.caption("Conditional survival assumes the component has already survived to the entered operating age. "
                "It is separate from the renewal policy, which resets age after repair/replacement.")
     a, b = st.columns(2)
@@ -563,13 +581,13 @@ with decision:
     st.dataframe(report_df, hide_index=True, use_container_width=True)
 
     c1, c2 = st.columns(2)
-    c1.metric("Optimized estimated annual electricity", f"{optimized.annual_electricity_kwh:,.0f} kWh")
-    c2.metric("Optimized annual electricity-associated CO₂", f"{optimized.annual_emissions_kgco2:,.0f} kg")
+    c1.metric("Annual electricity (kWh)", f"{optimized.annual_electricity_kwh:,.0f}")
+    c2.metric("Annual emissions (kg CO₂)", f"{optimized.annual_emissions_kgco2:,.0f}")
     if baseline is not None:
         saved_per_m3 = baseline.duty.specific_energy_kwh_m3 - optimized.duty.specific_energy_kwh_m3
         c3, c4 = st.columns(2)
-        c3.metric("Energy avoided per 1,000 m³ (equal-flow comparison)", f"{1000 * saved_per_m3:,.1f} kWh")
-        c4.metric("CO₂ avoided per 1,000 m³", f"{1000 * saved_per_m3 * grid_factor:,.1f} kg")
+        c3.metric("Energy saved / 1,000 m³ (kWh)", f"{1000 * saved_per_m3:,.1f}")
+        c4.metric("CO₂ saved / 1,000 m³ (kg)", f"{1000 * saved_per_m3 * grid_factor:,.1f}")
     st.caption("Annual kWh and emissions follow each strategy's expected uptime. Avoid comparing those totals "
                "as if both strategies necessarily deliver the same annual volume; use the normalized per-m³ figures.")
 
