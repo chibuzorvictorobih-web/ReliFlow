@@ -40,7 +40,17 @@ sign-off, operational control, or safety-critical use.
   settings; includes a clear warning for hydraulically infeasible settings.
 - Exports scenario assumptions (**JSON**), strategy comparison (**CSV**),
   and a 900-row sensitivity grid (**CSV**).
-- Includes 22 analytical/regression tests and a GitHub Actions workflow.
+- Includes 23 analytical/regression tests and a GitHub Actions workflow.
+
+## Update in v1.1.0 (16 November 2026)
+
+- A **Calculate & Optimize** button now submits all sidebar inputs together; the expensive search does not run on every edit.
+- The dashboard starts with simple instructions and displays results **after** the button is pressed.
+- Results are retained through Streamlit reruns and CSV/JSON downloads. Changing the illustrative scenario prompts a new calculation before showing any results for it.
+- Added a consistent dark Streamlit theme and dark metric cards with readable labels and values.
+- The engineering equations and synthetic example assumptions are unchanged by this interface update.
+
+**How to use:** Select a scenario → adjust the sidebar values → press **🧮 Calculate & Optimize** → explore the tabs and download results. If you change the inputs, press the button again to update the results.
 
 ## Fix in v1.0.1 (16 November 2026)
 

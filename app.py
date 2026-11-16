@@ -31,8 +31,20 @@ st.set_page_config(page_title="ReliFlow | Reliability & Energy", page_icon="⚙�
 st.markdown("""
 <style>
 .block-container {padding-top: 1.45rem; padding-bottom: 3rem; max-width: 1350px;}
-[data-testid="stMetric"] {background:#F0F6F5; border:1px solid #DCEAE7; padding:1rem; border-radius:0.65rem;}
-.small-note {color:#536871; font-size:0.92rem;}
+[data-testid="stMetric"] {
+    background: #172638;
+    border: 1px solid #35465B;
+    padding: 1rem;
+    border-radius: 0.75rem;
+    box-shadow: none;
+}
+[data-testid="stMetricLabel"], [data-testid="stMetricDelta"] {
+    color: #B9C8D9 !important;
+}
+[data-testid="stMetricValue"] {
+    color: #F8FAFC !important;
+}
+.small-note {color:#B9C8D9; font-size:0.92rem;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -108,79 +120,124 @@ with st.sidebar:
     seed = PRESETS[preset_name]
     st.caption("Examples are synthetic, not measured refinery operating data.")
 
-    with st.expander("1 · Pump curve and system", expanded=True):
-        shutoff = number("Shutoff head at reference speed (m)", seed, "shutoff_head_m", min_value=1.0)
-        curve = number("Pump curve a [m/(m³/h)²]", seed, "head_curve_coefficient", min_value=0.000001, step=0.0001, fmt="%.5f")
-        static_head = number("Static head (m)", seed, "static_head_m")
-        resistance = number("System curve k [m/(m³/h)²]", seed, "resistance_coefficient", step=0.0001, fmt="%.5f")
-        bep_flow = number("Reference BEP flow (m³/h)", seed, "bep_flow_m3h", min_value=1.0)
-        bep_eta = number("BEP efficiency (0–1)", seed, "bep_efficiency", min_value=0.05, max_value=1.0, step=0.01)
-        eta_penalty = number("Off-BEP efficiency curvature", seed, "efficiency_penalty", step=0.01)
-        motor_eta = number("Motor efficiency (0–1)", seed, "motor_efficiency", min_value=0.05, max_value=1.0, step=0.01)
-        drive_eta = number("VSD efficiency (0–1)", seed, "drive_efficiency", min_value=0.05, max_value=1.0, step=0.01)
-        density = number("Fluid density (kg/m³)", seed, "density_kg_m3", min_value=1.0)
+    # Forms stop the expensive optimizer from running after every input edit.
+    # Changing a preset happens outside the form, so each preset gets its own defaults.
+    with st.form("reliflow_calculator_form", border=False):
+        with st.expander("1 · Pump curve and system", expanded=True):
+            shutoff = number("Shutoff head at reference speed (m)", seed, "shutoff_head_m", min_value=1.0)
+            curve = number("Pump curve a [m/(m³/h)²]", seed, "head_curve_coefficient", min_value=0.000001, step=0.0001, fmt="%.5f")
+            static_head = number("Static head (m)", seed, "static_head_m")
+            resistance = number("System curve k [m/(m³/h)²]", seed, "resistance_coefficient", step=0.0001, fmt="%.5f")
+            bep_flow = number("Reference BEP flow (m³/h)", seed, "bep_flow_m3h", min_value=1.0)
+            bep_eta = number("BEP efficiency (0–1)", seed, "bep_efficiency", min_value=0.05, max_value=1.0, step=0.01)
+            eta_penalty = number("Off-BEP efficiency curvature", seed, "efficiency_penalty", step=0.01)
+            motor_eta = number("Motor efficiency (0–1)", seed, "motor_efficiency", min_value=0.05, max_value=1.0, step=0.01)
+            drive_eta = number("VSD efficiency (0–1)", seed, "drive_efficiency", min_value=0.05, max_value=1.0, step=0.01)
+            density = number("Fluid density (kg/m³)", seed, "density_kg_m3", min_value=1.0)
 
-    with st.expander("2 · Duty and operating speed", expanded=True):
-        flow = number("Required delivered flow (m³/h)", seed, "required_flow_m3h", min_value=1.0)
-        selected_speed = st.slider(
-            "Displayed speed (% of reference)", min_value=50, max_value=125,
-            value=int(seed["selected_speed_percent"]), step=1, key=f"{preset_name}:selected_speed",
-        ) / 100.0
-        min_speed = number("Minimum allowable optimization speed (%)", seed, "min_speed_percent", min_value=20, max_value=140, step=1.0, fmt="%.0f") / 100.0
-        max_speed = number("Maximum allowable optimization speed (%)", seed, "max_speed_percent", min_value=20, max_value=140, step=1.0, fmt="%.0f") / 100.0
+        with st.expander("2 · Duty and operating speed", expanded=True):
+            flow = number("Required delivered flow (m³/h)", seed, "required_flow_m3h", min_value=1.0)
+            selected_speed = st.slider(
+                "Displayed speed (% of reference)", min_value=50, max_value=125,
+                value=int(seed["selected_speed_percent"]), step=1, key=f"{preset_name}:selected_speed",
+            ) / 100.0
+            min_speed = number("Minimum allowable optimization speed (%)", seed, "min_speed_percent", min_value=20, max_value=140, step=1.0, fmt="%.0f") / 100.0
+            max_speed = number("Maximum allowable optimization speed (%)", seed, "max_speed_percent", min_value=20, max_value=140, step=1.0, fmt="%.0f") / 100.0
 
-    with st.expander("3 · Failure and preventive maintenance"):
-        beta = number("Weibull shape β", seed, "shape", min_value=0.2, max_value=10.0, step=0.1)
-        eta = number("Characteristic life η (operating hours)", seed, "characteristic_life_hours", min_value=10.0)
-        d_pm = number("Planned replacement downtime (h)", seed, "preventive_duration_hours")
-        d_cm = number("Failure repair downtime (h)", seed, "corrective_duration_hours")
-        c_pm = number("Planned replacement cost ($)", seed, "preventive_cost")
-        c_cm = number("Failure repair cost ($)", seed, "corrective_cost")
-        c_out = number("Value of unserved time ($/h)", seed, "downtime_cost_per_hour")
-        baseline_run = st.checkbox("Run to failure as baseline", value=False, key=f"{preset_name}:baseline_run")
-        baseline_pm = None if baseline_run else number("Baseline replacement interval (operating h)", seed, "baseline_pm_interval", min_value=10.0)
-        low_pm = number("Shortest PM interval in search (h)", seed, "pm_min_hours", min_value=1.0)
-        high_pm = number("Longest PM interval in search (h)", seed, "pm_max_hours", min_value=1.0)
-        age = number("Current survived operating age (h)", seed, "current_age_hours")
-        horizon = number("Future reliability horizon (h)", seed, "future_horizon_hours")
+        with st.expander("3 · Failure and preventive maintenance"):
+            beta = number("Weibull shape β", seed, "shape", min_value=0.2, max_value=10.0, step=0.1)
+            eta = number("Characteristic life η (operating hours)", seed, "characteristic_life_hours", min_value=10.0)
+            d_pm = number("Planned replacement downtime (h)", seed, "preventive_duration_hours")
+            d_cm = number("Failure repair downtime (h)", seed, "corrective_duration_hours")
+            c_pm = number("Planned replacement cost ($)", seed, "preventive_cost")
+            c_cm = number("Failure repair cost ($)", seed, "corrective_cost")
+            c_out = number("Value of unserved time ($/h)", seed, "downtime_cost_per_hour")
+            baseline_run = st.checkbox("Run to failure as baseline", value=False, key=f"{preset_name}:baseline_run")
+            baseline_pm = None if baseline_run else number("Baseline replacement interval (operating h)", seed, "baseline_pm_interval", min_value=10.0)
+            low_pm = number("Shortest PM interval in search (h)", seed, "pm_min_hours", min_value=1.0)
+            high_pm = number("Longest PM interval in search (h)", seed, "pm_max_hours", min_value=1.0)
+            age = number("Current survived operating age (h)", seed, "current_age_hours")
+            horizon = number("Future reliability horizon (h)", seed, "future_horizon_hours")
 
-    with st.expander("4 · Energy and environmental assumptions"):
-        annual_hours = number("Scheduled operation (calendar h/year)", seed, "annual_scheduled_hours", min_value=1.0, max_value=8784.0)
-        energy_price = number("Electricity price ($/kWh)", seed, "electricity_price_per_kwh", step=0.01)
-        grid_factor = number("Emission factor (kg CO₂/kWh)", seed, "grid_emissions_kgco2_per_kwh", step=0.01)
+        with st.expander("4 · Energy and environmental assumptions"):
+            annual_hours = number("Scheduled operation (calendar h/year)", seed, "annual_scheduled_hours", min_value=1.0, max_value=8784.0)
+            energy_price = number("Electricity price ($/kWh)", seed, "electricity_price_per_kwh", step=0.01)
+            grid_factor = number("Emission factor (kg CO₂/kWh)", seed, "grid_emissions_kgco2_per_kwh", step=0.01)
 
-    st.caption("Costs use example $ units. You may interpret them in another consistent currency by changing values.")
+        st.caption("Costs use example $ units. You may interpret them in another consistent currency by changing values.")
 
 
-try:
-    pump = PumpSpec(shutoff, curve, bep_flow, bep_eta, eta_penalty, motor_eta, drive_eta, density)
-    system = SystemSpec(static_head, resistance)
-    lifetime = WeibullSpec(beta, eta)
-    maintenance = MaintenanceSpec(d_pm, d_cm, c_pm, c_cm, c_out)
-    economics = EconomicsSpec(annual_hours, energy_price, grid_factor)
-    if min_speed > max_speed or low_pm > high_pm:
-        raise ValueError("Optimization search bounds must increase from minimum to maximum.")
-    optimized = optimize_strategy(pump, system, flow, lifetime, maintenance, economics,
-                                  min_speed, max_speed, low_pm, high_pm)
-    baseline = None
+        submitted = st.form_submit_button(
+            "🧮 Calculate & Optimize", type="primary", use_container_width=True
+        )
+
+# Run the model only when the user explicitly presses Calculate & Optimize.
+# Keep the last submitted results in session state, including when a download
+# widget triggers a Streamlit rerun. An unsubmitted preset never shows results
+# computed for a different scenario.
+if submitted:
     try:
-        baseline = evaluate_strategy(pump, system, flow, lifetime, maintenance, economics,
-                                     1.0, baseline_pm)
-    except ValueError:
-        pass
-    chosen = None
-    try:
-        chosen = evaluate_strategy(pump, system, flow, lifetime, maintenance, economics,
-                                   selected_speed, baseline_pm)
-    except ValueError:
-        pass
-except (ValueError, OverflowError) as exc:
-    st.error(f"Please adjust the model inputs: {exc}")
-    st.stop()
+        with st.spinner("Calculating hydraulics, reliability and optimal maintenance…"):
+            pump = PumpSpec(shutoff, curve, bep_flow, bep_eta, eta_penalty, motor_eta, drive_eta, density)
+            system = SystemSpec(static_head, resistance)
+            lifetime = WeibullSpec(beta, eta)
+            maintenance = MaintenanceSpec(d_pm, d_cm, c_pm, c_cm, c_out)
+            economics = EconomicsSpec(annual_hours, energy_price, grid_factor)
+            if min_speed > max_speed or low_pm > high_pm:
+                raise ValueError("Optimization search bounds must increase from minimum to maximum.")
+            optimized = optimize_strategy(pump, system, flow, lifetime, maintenance, economics,
+                                          min_speed, max_speed, low_pm, high_pm)
+            baseline = None
+            try:
+                baseline = evaluate_strategy(pump, system, flow, lifetime, maintenance, economics,
+                                             1.0, baseline_pm)
+            except ValueError:
+                pass
+            chosen = None
+            try:
+                chosen = evaluate_strategy(pump, system, flow, lifetime, maintenance, economics,
+                                           selected_speed, baseline_pm)
+            except ValueError:
+                pass
+            st.session_state["reliflow_last_result"] = {
+                "preset": preset_name,
+                "model": (pump, system, lifetime, maintenance, economics),
+                "strategies": (optimized, baseline, chosen),
+                "inputs": {
+                    "flow": flow, "selected_speed": selected_speed,
+                    "min_speed": min_speed, "max_speed": max_speed,
+                    "low_pm": low_pm, "high_pm": high_pm,
+                    "age": age, "horizon": horizon, "eta": eta,
+                    "grid_factor": grid_factor, "baseline_pm": baseline_pm,
+                },
+            }
+            st.session_state.pop("reliflow_last_error", None)
+    except (ValueError, OverflowError) as exc:
+        st.session_state.pop("reliflow_last_result", None)
+        st.session_state["reliflow_last_error"] = {"preset": preset_name, "message": str(exc)}
 
 st.title("ReliFlow")
 st.markdown("**Industrial Equipment Reliability & Energy Optimization**")
 st.caption(f"Version {__version__} · A reproducible educational engineering case study · All default inputs are illustrative")
+
+analysis = st.session_state.get("reliflow_last_result")
+if analysis is None or analysis["preset"] != preset_name:
+    last_error = st.session_state.get("reliflow_last_error")
+    if last_error and last_error["preset"] == preset_name:
+        st.error(f"Please adjust the model inputs: {last_error['message']}")
+    st.info("Select an illustrative scenario, edit the sidebar parameters, then press "
+            "**🧮 Calculate & Optimize** to generate pump, reliability, energy and maintenance results.")
+    st.stop()
+
+pump, system, lifetime, maintenance, economics = analysis["model"]
+optimized, baseline, chosen = analysis["strategies"]
+active = analysis["inputs"]
+flow, selected_speed = active["flow"], active["selected_speed"]
+min_speed, max_speed = active["min_speed"], active["max_speed"]
+low_pm, high_pm = active["low_pm"], active["high_pm"]
+age, horizon, eta = active["age"], active["horizon"], active["eta"]
+grid_factor, baseline_pm = active["grid_factor"], active["baseline_pm"]
+st.caption("Showing the **last calculated** results. Changes in the sidebar take effect only after you press Calculate & Optimize again.")
 st.info("The model satisfies the SAME required flow in all feasible control scenarios by assuming a throttling valve absorbs excess head. "
         "Speed changes do not automatically alter failure rates in this model.", icon="ℹ️")
 

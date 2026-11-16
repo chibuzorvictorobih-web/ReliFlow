@@ -3,4 +3,4 @@
 This is an educational, steady-state model, not an equipment design or safety tool.
 """
 
-__version__ = "1.0.1"
+__version__ = "1.1.0"
