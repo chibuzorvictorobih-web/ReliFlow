@@ -1,0 +1,3 @@
+strategy,flow_m3h,reference_speed_percent,pm_interval_operating_hours,electrical_kw,specific_energy_kwh_per_m3,availability_percent,expected_annual_volume_m3,annual_total_cost_assumed_usd
+Baseline,70.0,100.0,7500.0,14.9001,0.21286,99.639,557977.4,38364.78
+Optimized,70.0,87.274,3773.733031518519,9.3412,0.13345,99.708,558367.2,27876.51

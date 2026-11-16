@@ -1,0 +1,95 @@
+{
+  "note": "All inputs and numerical outputs are synthetic illustrative modeling estimates.",
+  "pump": {
+    "shutoff_head_m": 90.0,
+    "head_curve_coefficient": 0.0065,
+    "bep_flow_m3h": 80.0,
+    "bep_efficiency": 0.82,
+    "efficiency_penalty": 0.35,
+    "motor_efficiency": 0.94,
+    "drive_efficiency": 0.97,
+    "density_kg_m3": 998.0
+  },
+  "system": {
+    "static_head_m": 22.0,
+    "resistance_coefficient": 0.003
+  },
+  "lifetime": {
+    "shape": 2.2,
+    "characteristic_life_hours": 10000.0
+  },
+  "maintenance": {
+    "preventive_duration_hours": 6.0,
+    "corrective_duration_hours": 48.0,
+    "preventive_cost": 550.0,
+    "corrective_cost": 5000.0,
+    "downtime_cost_per_hour": 650.0
+  },
+  "economics": {
+    "annual_scheduled_hours": 8000.0,
+    "electricity_price_per_kwh": 0.14,
+    "grid_emissions_kgco2_per_kwh": 0.45
+  },
+  "required_flow_m3h": 70.0,
+  "minimum_feasible_speed_ratio": 0.8727351641057364,
+  "baseline": {
+    "duty": {
+      "flow_m3h": 70.0,
+      "system_head_m": 36.7,
+      "pump_head_m": 58.150000000000006,
+      "throttling_head_m": 21.450000000000003,
+      "pump_efficiency": 0.8145312499999999,
+      "electric_power_kw": 14.900098395600942,
+      "specific_energy_kwh_m3": 0.21285854850858488,
+      "speed_ratio": 1.0
+    },
+    "maintenance": {
+      "interval_hours": 7500.0,
+      "survival_at_interval": 0.5879877144446629,
+      "probability_failure_before_interval": 0.4120122855553371,
+      "expected_operating_hours_per_cycle": 6428.895410887515,
+      "expected_downtime_hours_per_cycle": 23.30451599332416,
+      "availability": 0.9963881286603916,
+      "maintenance_cost_per_calendar_hour": 0.36940186257890395,
+      "downtime_cost_per_calendar_hour": 2.347716370745444
+    },
+    "annual_uptime_hours": 7971.105029283133,
+    "expected_annual_volume_m3": 557977.3520498193,
+    "annual_electricity_kwh": 118770.24925798821,
+    "annual_energy_cost": 16627.83489611835,
+    "annual_maintenance_cost": 2955.2149006312316,
+    "annual_downtime_cost": 18781.73096596355,
+    "annual_total_cost": 38364.78076271313,
+    "annual_emissions_kgco2": 53446.612166094696
+  },
+  "optimized": {
+    "duty": {
+      "flow_m3h": 70.0,
+      "system_head_m": 36.7,
+      "pump_head_m": 36.7,
+      "throttling_head_m": 0.0,
+      "pump_efficiency": 0.8199976429077858,
+      "electric_power_kw": 9.341156075564625,
+      "specific_energy_kwh_m3": 0.13344508679378034,
+      "speed_ratio": 0.8727351641057364
+    },
+    "maintenance": {
+      "interval_hours": 3773.733031518519,
+      "survival_at_interval": 0.8894147415733636,
+      "probability_failure_before_interval": 0.11058525842663636,
+      "expected_operating_hours_per_cycle": 3640.1985937629183,
+      "expected_downtime_hours_per_cycle": 10.644580853918727,
+      "availability": 0.9970843500131895,
+      "maintenance_cost_per_calendar_hour": 0.2854421157402639,
+      "downtime_cost_per_calendar_hour": 1.8951724914268147
+    },
+    "annual_uptime_hours": 7976.674800105516,
+    "expected_annual_volume_m3": 558367.2360073861,
+    "annual_electricity_kwh": 74511.36427180888,
+    "annual_energy_cost": 10431.590998053245,
+    "annual_maintenance_cost": 2283.536925922111,
+    "annual_downtime_cost": 15161.379931414518,
+    "annual_total_cost": 27876.507855389875,
+    "annual_emissions_kgco2": 33530.113922314
+  }
+}
